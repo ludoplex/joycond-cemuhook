@@ -45,11 +45,8 @@ def clamp(my_value, min_value, max_value):
 
 
 def abs_to_button(value):
-    if value > 0.75:
-        value = 255
-    else:
-        value = 0
-    return value
+  value = 255 if value > 0.75 else 0
+  return value
 
 
 def get_led_status(device):
@@ -139,45 +136,46 @@ class Message(BaseMessage):
 
 class SwitchDevice:
     def __init__(self, server, index, device, motion_device, motion_only=False):
-        self.server = server
-        self.index = index
-        self.device = device
-        self.motion_device = motion_device
-        self.motion_only = motion_only
+      self.server = server
+      self.index = index
+      self.device = device
+      self.motion_device = motion_device
+      self.motion_only = motion_only
 
-        self.name = device.name
-        self.serial = motion_device.uniq if motion_device.uniq else "00:00:00:00:00:00"
-        self.mac = [int(part, 16) for part in self.serial.split(":")]
+      self.name = device.name
+      self.serial = motion_device.uniq if motion_device.uniq else "00:00:00:00:00:00"
+      self.mac = [int(part, 16) for part in self.serial.split(":")]
 
-        # Connection type (1 = USB, 2 = Bluetooth)
-        self.connection_type = 0x01 if "Grip" in motion_device.name else 0x02
+      # Connection type (1 = USB, 2 = Bluetooth)
+      self.connection_type = 0x01 if "Grip" in motion_device.name else 0x02
 
-        self.led_status = get_led_status(device)
+      self.led_status = get_led_status(device)
 
-        if not self.led_status:
-            self.led_status = get_led_status(motion_device)
+      if not self.led_status:
+          self.led_status = get_led_status(motion_device)
 
-        self.player_id = get_player_id(self.led_status)
+      self.player_id = get_player_id(self.led_status)
 
-        profile = pkgutil.get_data(__name__, "profiles/" + resolve_device_name(self.name) + ".json")
-        original_keymap = json.loads(profile)
-        self.keymap = {evdev.ecodes.ecodes[ecode.lstrip('-')]: [] for ps_key, ecode in original_keymap.items() if
-                        ecode is not None}
-        for ps_key, ecode in original_keymap.items():
-            if ecode is not None:
-                prefix = '-' if ecode.startswith('-') else ''
-                self.keymap[evdev.ecodes.ecodes[ecode.lstrip('-')]].append(prefix + ps_key)
+      profile = pkgutil.get_data(
+          __name__, f"profiles/{resolve_device_name(self.name)}.json")
+      original_keymap = json.loads(profile)
+      self.keymap = {evdev.ecodes.ecodes[ecode.lstrip('-')]: [] for ps_key, ecode in original_keymap.items() if
+                      ecode is not None}
+      for ps_key, ecode in original_keymap.items():
+          if ecode is not None:
+              prefix = '-' if ecode.startswith('-') else ''
+              self.keymap[evdev.ecodes.ecodes[ecode.lstrip('-')]].append(prefix + ps_key)
 
-        self.state = {ps_key.lstrip('-'): 0x00 for ps_key in original_keymap.keys()}
+      self.state = {ps_key.lstrip('-'): 0x00 for ps_key in original_keymap.keys()}
 
-        self.state.update(accel_x=0.0, accel_y=0.0, accel_z=0.0,
-                          motion_x=0.0, motion_y=0.0, motion_z=0.0)
+      self.state.update(accel_x=0.0, accel_y=0.0, accel_z=0.0,
+                        motion_x=0.0, motion_y=0.0, motion_z=0.0)
 
-        self.battery = None
-        self.dbus_interface, self.dbus_properties_interface = self.get_battery_dbus_interface()
+      self.battery = None
+      self.dbus_interface, self.dbus_properties_interface = self.get_battery_dbus_interface()
 
-        self.thread = threading.Thread(target=self._worker)
-        self.thread.start()
+      self.thread = threading.Thread(target=self._worker)
+      self.thread.start()
 
     def _worker(self):
         self._loop = asyncio.new_event_loop()
@@ -284,26 +282,28 @@ class SwitchDevice:
             print_verbose("Input events task ended")
 
     def get_battery_dbus_interface(self):
-        bus = dbus.SystemBus()
-        if bus.name_has_owner('org.freedesktop.UPower'):
-            upower = bus.get_object('org.freedesktop.UPower', '/org/freedesktop/UPower')
+      bus = dbus.SystemBus()
+      if bus.name_has_owner('org.freedesktop.UPower'):
+        upower = bus.get_object('org.freedesktop.UPower', '/org/freedesktop/UPower')
 
-            upower_list = upower.get_dbus_method('EnumerateDevices', 'org.freedesktop.UPower')()
+        upower_list = upower.get_dbus_method('EnumerateDevices', 'org.freedesktop.UPower')()
 
-            for device in upower_list:
-                dev = bus.get_object('org.freedesktop.UPower', device)
+        for device in upower_list:
+          dev = bus.get_object('org.freedesktop.UPower', device)
 
-                dbus_interface = dbus.Interface(dev, 'org.freedesktop.UPower.Device')
+          dbus_interface = dbus.Interface(dev, 'org.freedesktop.UPower.Device')
 
-                dbus_properties_interface = dbus.Interface(dev, 'org.freedesktop.DBus.Properties')
-                properties = dbus_properties_interface.GetAll("org.freedesktop.UPower.Device")
+          dbus_properties_interface = dbus.Interface(dev, 'org.freedesktop.DBus.Properties')
+          properties = dbus_properties_interface.GetAll("org.freedesktop.UPower.Device")
 
-                if properties["Serial"] == self.serial:
-                    self.battery = properties["Percentage"]
-                    print_verbose("Found dbus interface for battery level reading. Value: " + str(self.battery))
-                    return dbus_interface, dbus_properties_interface
+          if properties["Serial"] == self.serial:
+            self.battery = properties["Percentage"]
+            print_verbose(
+                f"Found dbus interface for battery level reading. Value: {str(self.battery)}"
+            )
+            return dbus_interface, dbus_properties_interface
 
-        return None, None
+      return None, None
 
     async def _get_battery_level(self):
         print_verbose("Battery level reading thread started")
@@ -353,13 +353,13 @@ class UDPServer:
     TIMEOUT = 5
 
     def __init__(self, host='', port=26760):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.bind((host, port))
-        print_verbose("Started UDP server with ip " + str(host) + ", port " + str(port))
-        self.counter = 0
-        self.clients = dict()
-        self.slots = [None] * UDPServer.MAX_PADS
-        self.stop_event = threading.Event()
+      self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+      self.sock.bind((host, port))
+      print_verbose(f"Started UDP server with ip {str(host)}, port {str(port)}")
+      self.counter = 0
+      self.clients = dict()
+      self.slots = [None] * UDPServer.MAX_PADS
+      self.stop_event = threading.Event()
 
     def _res_ports(self, index):
         device = self.slots[index]
@@ -414,23 +414,23 @@ class UDPServer:
                 self.sock.sendto(message, address)
 
     def _handle_request(self, request):
-        message, address = request
+      message, address = request
 
-        # Ignore empty messages (sent by sock_stop)
-        if not message:
-            return
+      # Ignore empty messages (sent by sock_stop)
+      if not message:
+          return
 
-        # client_id = message[12:16]
-        msg_type = message[16:20]
+      # client_id = message[12:16]
+      msg_type = message[16:20]
 
-        if msg_type == Message.Types['version']:
-            return
-        elif msg_type == Message.Types['ports']:
-            self._req_ports(message, address)
-        elif msg_type == Message.Types['data']:
-            self._req_data(message, address)
-        else:
-            print('[udp] Unknown message type: ' + str(msg_type))
+      if msg_type == Message.Types['version']:
+        return
+      elif msg_type == Message.Types['ports']:
+          self._req_ports(message, address)
+      elif msg_type == Message.Types['data']:
+          self._req_data(message, address)
+      else:
+        print(f'[udp] Unknown message type: {str(msg_type)}')
 
     def report(self, device, report_motion=False):
         device_state = device.report
